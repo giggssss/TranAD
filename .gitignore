@@ -136,3 +136,13 @@ dmypy.json
 data/WADI/table_WADI.pdf
 data/WADI/WADI_14days.csv
 data/WADI/WADI_attackdata.csv
+*.csv
+*.pdf
+*.txt
+*.json
+*.jsonl
+*.jsonl.gz
+plots/*
+202401_06_sample.7z
+plots/TranAD_SMD/output.pdf
+plots/TranAD_SMD/training-graph.pdf
