@@ -11,7 +11,7 @@ parser.add_argument('--model',
 					metavar='-m', 
 					type=str, 
 					required=False,
-					default='LSTM_Multivariate',
+					default='TranAD',
                     help="model name")
 parser.add_argument('--test', 
 					action='store_true', 

@@ -73,7 +73,26 @@ def load_model(modelname, dims):
 		epoch = -1; accuracy_list = []
 	return model, optimizer, scheduler, epoch, accuracy_list
 
+def sample_data(data, max_samples=10000):
+	"""주기적 샘플링을 통해 데이터를 추출하는 함수"""
+	if len(data) > max_samples:
+		# 샘플링 간격 계산
+		stride = len(data) // max_samples
+		# 일정한 간격으로 데이터 추출
+		if isinstance(data, torch.Tensor):
+			return data[::stride]
+		else:
+			return data[::stride]
+	return data
+
 def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
+	if not training:
+		# 테스트 시 동일한 간격으로 데이터 샘플링
+		sampled_data = sample_data(data)
+		sampled_dataO = sample_data(dataO)
+		print(f'Sampled test data size: {len(sampled_data)} (original: {len(data)})')
+		data, dataO = sampled_data, sampled_dataO
+	
 	l = nn.MSELoss(reduction = 'mean' if training else 'none')
 	feats = dataO.shape[1]
 	if 'DAGMM' in model.name:
@@ -319,7 +338,11 @@ if __name__ == '__main__':
 	torch.zero_grad = True
 	model.eval()
 	print(f'{color.HEADER}Testing {args.model} on {args.dataset}{color.ENDC}')
+	
+	start_time = time()
 	loss, y_pred = backprop(0, model, testD, testO, optimizer, scheduler, training=False)
+	test_time = time() - start_time
+	print(f'Testing completed in {test_time:.2f} seconds')
 
 	### Plot curves
 	if not args.test:
