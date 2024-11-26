@@ -5,7 +5,7 @@ import os, torch
 import numpy as np
 
 # plt.style.use(['science', 'ieee'])
-plt.style.use(['seaborn', 'fast'])
+plt.style.use(['default'])
 plt.rcParams["text.usetex"] = False
 plt.rcParams['figure.figsize'] = 6, 2
 

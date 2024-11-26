@@ -5,8 +5,8 @@ parser.add_argument('--dataset',
 					metavar='-d', 
 					type=str, 
 					required=False,
-					default='synthetic',
-                    help="dataset from ['synthetic', 'SMD']")
+					default='Gyeongsan',
+                    help="dataset from ['Gyeongsan', 'SWaT', 'WADI', 'SMD']")
 parser.add_argument('--model', 
 					metavar='-m', 
 					type=str, 
