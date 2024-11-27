@@ -74,16 +74,35 @@ def load_model(modelname, dims):
 	return model, optimizer, scheduler, epoch, accuracy_list
 
 def sample_data(data, max_samples=10000):
-	"""주기적 샘플링을 통해 데이터를 추출하는 함수"""
-	if len(data) > max_samples:
-		# 샘플링 간격 계산
-		stride = len(data) // max_samples
-		# 일정한 간격으로 데이터 추출
-		if isinstance(data, torch.Tensor):
-			return data[::stride]
-		else:
-			return data[::stride]
-	return data
+    """주기적 샘플링을 통해 데이터를 추출하는 함수
+    
+    Args:
+        data: 입력 데이터 (numpy array 또는 torch.Tensor)
+        max_samples: 원하는 샘플 개수 (default: 10000)
+    
+    Returns:
+        정확히 max_samples 길이를 가진 샘플링된 데이터
+    """
+    data_len = len(data)
+    if data_len > max_samples:
+        # numpy의 linspace를 사용하여 균등한 간격의 인덱스 생성
+        indices = np.linspace(0, data_len-1, max_samples, dtype=int)
+        
+        if isinstance(data, torch.Tensor):
+            return data[indices]
+        else:
+            return data[indices]
+    elif data_len < max_samples:
+        # 데이터가 부족한 경우 반복하여 채움
+        if isinstance(data, torch.Tensor):
+            repeats = int(np.ceil(max_samples / data_len))
+            repeated_data = data.repeat(repeats, 1)
+            return repeated_data[:max_samples]
+        else:
+            repeats = int(np.ceil(max_samples / data_len))
+            repeated_data = np.tile(data, (repeats, 1))
+            return repeated_data[:max_samples]
+    return data
 
 def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
 	if not training:
@@ -311,7 +330,7 @@ def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
 		else:
 			return loss.detach().numpy(), y_pred.detach().numpy()
 
-if __name__ == '__main__':
+def main():
 	train_loader, test_loader, labels = load_dataset(args.dataset)
 	if args.model in ['MERLIN']:
 		eval(f'run_{args.model.lower()}(test_loader, labels, args.dataset)')
@@ -340,6 +359,9 @@ if __name__ == '__main__':
 	print(f'{color.HEADER}Testing {args.model} on {args.dataset}{color.ENDC}')
 	
 	start_time = time()
+	# 샘플링된 레이블도 필요함
+	sampled_labels = sample_data(labels, max_samples=10000)
+	print(f"샘플링된 레이블의 이상치 수: {np.sum(sampled_labels)}")
 	loss, y_pred = backprop(0, model, testD, testO, optimizer, scheduler, training=False)
 	test_time = time() - start_time
 	print(f'Testing completed in {test_time:.2f} seconds')
@@ -347,23 +369,30 @@ if __name__ == '__main__':
 	### Plot curves
 	if not args.test:
 		if 'TranAD' in model.name: testO = torch.roll(testO, 1, 0) 
-		plotter(f'{args.model}_{args.dataset}', testO, y_pred, loss, labels)
+		plotter(f'{args.model}_{args.dataset}', testO, y_pred, loss, sampled_labels)
 
 	### Scores
 	df = pd.DataFrame()
 	lossT, _ = backprop(0, model, trainD, trainO, optimizer, scheduler, training=False)
+	preds = []
 	for i in range(loss.shape[1]):
-		lt, l, ls = lossT[:, i], loss[:, i], labels[:, i]
-		result, pred = pot_eval(lt, l, ls); preds.append(pred)
-		df = df.append(result, ignore_index=True)
-	# preds = np.concatenate([i.reshape(-1, 1) + 0 for i in preds], axis=1)
-	# pd.DataFrame(preds, columns=[str(i) for i in range(10)]).to_csv('labels.csv')
+		lt, l, ls = lossT[:, i], loss[:, i], sampled_labels[:, i]
+		result, pred = pot_eval(lt, l, ls)
+		preds.append(pred)
+		
+		# 기존 append 대신 concat 사용
+		result_df = pd.DataFrame([result])
+		df = pd.concat([df, result_df], ignore_index=True)
+
 	lossTfinal, lossFinal = np.mean(lossT, axis=1), np.mean(loss, axis=1)
-	labelsFinal = (np.sum(labels, axis=1) >= 1) + 0
-	result, _ = pot_eval(lossTfinal, lossFinal, labelsFinal)
-	result.update(hit_att(loss, labels))
-	result.update(ndcg(loss, labels))
+	sampled_labelsFinal = (np.sum(sampled_labels, axis=1) >= 1) + 0
+	result, _ = pot_eval(lossTfinal, lossFinal, sampled_labelsFinal)
+	result.update(hit_att(loss, sampled_labels))
+	result.update(ndcg(loss, sampled_labels))
 	print(df)
 	pprint(result)
 	# pprint(getresults2(df, result))
 	# beep(4)
+
+if __name__ == '__main__':
+	main()

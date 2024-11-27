@@ -2,7 +2,11 @@ pandas
 tqdm
 matplotlib
 dgl
-numpy
+numpy==1.24.3
 SciencePlots
 scikit-learn
 xlrd==1.2.0
+torch==1.13.1
+pydantic
+torchdata
+matplotlib-backend-pdf
