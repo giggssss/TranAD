@@ -73,44 +73,71 @@ def load_model(modelname, dims):
 		epoch = -1; accuracy_list = []
 	return model, optimizer, scheduler, epoch, accuracy_list
 
-def sample_data(data, max_samples=10000):
-    """주기적 샘플링을 통해 데이터를 추출하는 함수
+def sample_data(data, labels, max_samples=10000):
+    """
+    데이터를 샘플링하는 함수. 데이터와 레이블의 크기를 조정하여 최대 샘플 수에 맞춥니다.
     
     Args:
-        data: 입력 데이터 (numpy array 또는 torch.Tensor)
-        max_samples: 원하는 샘플 개수 (default: 10000)
+        data (torch.Tensor 또는 np.ndarray): 입력 데이터.
+        labels (torch.Tensor 또는 np.ndarray): 레이블 데이터.
+        max_samples (int): 최대 샘플 수. 기본값은 10000.
     
     Returns:
-        정확히 max_samples 길이를 가진 샘플링된 데이터
+        tuple: 샘플링된 데이터와 레이블.
     """
     data_len = len(data)
     if data_len > max_samples:
-        # numpy의 linspace를 사용하여 균등한 간격의 인덱스 생성
         indices = np.linspace(0, data_len-1, max_samples, dtype=int)
-        
         if isinstance(data, torch.Tensor):
-            return data[indices]
+            sampled_data = data[indices]
+            sampled_labels = labels[indices]
         else:
-            return data[indices]
+            sampled_data = data[indices]
+            sampled_labels = labels[indices]
     elif data_len < max_samples:
-        # 데이터가 부족한 경우 반복하여 채움
+        repeats = int(np.ceil(max_samples / data_len))
         if isinstance(data, torch.Tensor):
-            repeats = int(np.ceil(max_samples / data_len))
+            # 차원이 2 이상인지 확인하고, 1차원일 경우 차원 추가
+            if data.dim() == 1:
+                data = data.unsqueeze(1)  # (samples,) -> (samples, 1)
+            if isinstance(labels, torch.Tensor):
+                if labels.dim() == 1:
+                    labels = labels.unsqueeze(1)  # (samples,) -> (samples, 1)
+                repeated_labels = labels.repeat(repeats, 1)
+            else:
+                if labels.ndim == 1:
+                    labels = labels.reshape(-1, 1)  # (samples,) -> (samples, 1)
+                repeated_labels = np.tile(labels, (repeats, 1))
+            
             repeated_data = data.repeat(repeats, 1)
-            return repeated_data[:max_samples]
+            sampled_data = repeated_data[:max_samples]
+            sampled_labels = repeated_labels[:max_samples]
         else:
-            repeats = int(np.ceil(max_samples / data_len))
+            # Numpy 배열인 경우
+            if data.ndim == 1:
+                data = data.reshape(-1, 1)  # (samples,) -> (samples, 1)
+            if labels.ndim == 1:
+                labels = labels.reshape(-1, 1)  # (samples,) -> (samples, 1)
             repeated_data = np.tile(data, (repeats, 1))
-            return repeated_data[:max_samples]
-    return data
+            repeated_labels = np.tile(labels, (repeats, 1))
+            sampled_data = repeated_data[:max_samples]
+            sampled_labels = repeated_labels[:max_samples]
+    else:
+        sampled_data = data
+        sampled_labels = labels
+
+    return sampled_data, sampled_labels
 
 def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
 	if not training:
 		# 테스트 시 동일한 간격으로 데이터 샘플링
-		sampled_data = sample_data(data)
-		sampled_dataO = sample_data(dataO)
+		# 샘플링된 레이터와 레이블
+		if len(data) > 20000:
+			sampled_data, sampled_labels = sample_data(data, dataO)
+		else:
+			sampled_data, sampled_labels = data, dataO
 		print(f'Sampled test data size: {len(sampled_data)} (original: {len(data)})')
-		data, dataO = sampled_data, sampled_dataO
+		data, dataO = sampled_data, sampled_labels
 	
 	l = nn.MSELoss(reduction = 'mean' if training else 'none')
 	feats = dataO.shape[1]
@@ -345,7 +372,7 @@ def main():
 	### Training phase
 	if not args.test:
 		print(f'{color.HEADER}Training {args.model} on {args.dataset}{color.ENDC}')
-		num_epochs = 5; e = epoch + 1; start = time()
+		num_epochs = args.epoch; e = epoch + 1; start = time()
 		for e in tqdm(list(range(epoch+1, epoch+num_epochs+1))):
 			lossT, lr = backprop(e, model, trainD, trainO, optimizer, scheduler)
 			accuracy_list.append((lossT, lr))
@@ -359,10 +386,13 @@ def main():
 	print(f'{color.HEADER}Testing {args.model} on {args.dataset}{color.ENDC}')
 	
 	start_time = time()
-	# 샘플링된 레이블도 필요함
-	sampled_labels = sample_data(labels, max_samples=10000)
+	# 샘플링된 레이터와 레이블
+	if len(testD) > 20000:
+		sampled_testD, sampled_labels = sample_data(testD, labels, max_samples=10000)
+	else:
+		sampled_testD, sampled_labels = testD, labels
 	print(f"샘플링된 레이블의 이상치 수: {np.sum(sampled_labels)}")
-	loss, y_pred = backprop(0, model, testD, testO, optimizer, scheduler, training=False)
+	loss, y_pred = backprop(0, model, sampled_testD, testO, optimizer, scheduler, training=False)
 	test_time = time() - start_time
 	print(f'Testing completed in {test_time:.2f} seconds')
 
@@ -374,6 +404,8 @@ def main():
 	### Scores
 	df = pd.DataFrame()
 	lossT, _ = backprop(0, model, trainD, trainO, optimizer, scheduler, training=False)
+	lossT = lossT[:, :10]
+	loss = loss[:, :10]
 	preds = []
 	for i in range(loss.shape[1]):
 		lt, l, ls = lossT[:, i], loss[:, i], sampled_labels[:, i]

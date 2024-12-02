@@ -137,23 +137,20 @@ def pot_eval(init_score, score, label, q=1e-5, level=0.02):
             s = SPOT(q)  # SPOT object
             s.fit(init_score, score)  # data import
             s.initialize(level=lms, min_extrema=False, verbose=False)  # initialization step
-        except: lms = lms * 0.999
-        else: break
+        except:
+            lms = lms * 0.999
+        else:
+            break
     ret = s.run(dynamic=False)  # run
-    # print(len(ret['alarms']))
-    # print(len(ret['thresholds']))
     pot_th = np.mean(ret['thresholds']) * lm[1]
-    # pot_th = np.percentile(score, 100 * lm[0])
-    # np.percentile(score, 100 * lm[0])
     pred, p_latency = adjust_predicts(score, label, pot_th, calc_latency=True)
-    # DEBUG - np.save(f'{debug}.npy', np.array(pred))
-    # DEBUG - print(np.argwhere(np.array(pred)))
     p_t = calc_point2point(pred, label)
-    # print('POT result: ', p_t, pot_th, p_latency)
+    accuracy = (p_t[3] + p_t[4]) / (p_t[3] + p_t[4] + p_t[5] + p_t[6])
     return {
         'f1': p_t[0],
         'precision': p_t[1],
         'recall': p_t[2],
+        'accuracy': accuracy,
         'TP': p_t[3],
         'TN': p_t[4],
         'FP': p_t[5],

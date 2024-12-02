@@ -408,7 +408,9 @@ class TranAD(nn.Module):
 		self.transformer_decoder1 = TransformerDecoder(decoder_layers1, 1)
 		decoder_layers2 = TransformerDecoderLayer(d_model=2 * feats, nhead=feats, dim_feedforward=16, dropout=0.1)
 		self.transformer_decoder2 = TransformerDecoder(decoder_layers2, 1)
-		self.fcn = nn.Sequential(nn.Linear(2 * feats, feats), nn.Sigmoid())
+		# self.fcn = nn.Sequential(nn.Linear(2 * feats, feats), nn.Sigmoid())
+		# self.fcn = nn.Sequential(nn.Linear(2 * feats, feats), nn.Tanh())
+		self.fcn = nn.Sequential(nn.Linear(2 * feats, feats), nn.CELU())
 
 	def encode(self, src, c, tgt):
 		src = torch.cat((src, c), dim=2)

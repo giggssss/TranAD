@@ -13,6 +13,13 @@ parser.add_argument('--model',
 					required=False,
 					default='TranAD',
                     help="model name")
+parser.add_argument('--epoch', 
+					metavar='-e', 
+					type=int, 
+					required=False,
+					default='5',
+                    help="train epoch")
+
 parser.add_argument('--test', 
 					action='store_true', 
 					help="test the model")
