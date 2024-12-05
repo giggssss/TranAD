@@ -13,6 +13,7 @@ from torch.utils.data import Dataset, DataLoader, TensorDataset
 import torch.nn as nn
 from time import time
 from pprint import pprint
+import json
 # from beepy import beep
 
 def convert_to_windows(data, model):
@@ -388,7 +389,7 @@ def main():
 	start_time = time()
 	# 샘플링된 레이터와 레이블
 	if len(testD) > 20000:
-		sampled_testD, sampled_labels = sample_data(testD, labels, max_samples=10000)
+		sampled_testD, sampled_labels = sample_data(testD, labels, max_samples=20000)
 	else:
 		sampled_testD, sampled_labels = testD, labels
 	print(f"샘플링된 레이블의 이상치 수: {np.sum(sampled_labels)}")
@@ -396,10 +397,10 @@ def main():
 	test_time = time() - start_time
 	print(f'Testing completed in {test_time:.2f} seconds')
 
-	### Plot curves
-	if not args.test:
-		if 'TranAD' in model.name: testO = torch.roll(testO, 1, 0) 
-		plotter(f'{args.model}_{args.dataset}', testO, y_pred, loss, sampled_labels)
+	### Plot curves during testing
+	if 'TranAD' in model.name:
+		testO = torch.roll(testO, 1, 0) 
+	plotter(f'{args.model}_{args.dataset}_test', testO, y_pred, loss, sampled_labels)
 
 	### Scores
 	df = pd.DataFrame()
@@ -425,6 +426,47 @@ def main():
 	pprint(result)
 	# pprint(getresults2(df, result))
 	# beep(4)
+
+	# JSON 파일로 결과 저장하는 로직 추가
+	# 직렬화 가능한 타입으로 변환하는 함수 정의
+	def convert_to_serializable(obj):
+		if isinstance(obj, np.integer):
+			return int(obj)
+		elif isinstance(obj, np.floating):
+			return float(obj)
+		elif isinstance(obj, np.ndarray):
+			return obj.tolist()
+		elif isinstance(obj, dict):
+			return {k: convert_to_serializable(v) for k, v in obj.items()}
+		elif isinstance(obj, list):
+			return [convert_to_serializable(i) for i in obj]
+		else:
+			return obj
+
+	# 결과와 상수를 직렬화 가능한 타입으로 변환
+	serializable_result = convert_to_serializable(result)
+	serializable_constants = convert_to_serializable({
+		"lm_d": lm_d,
+		"lr_d": lr_d,
+		"percentiles": percentiles,
+		"percentile_merlin": percentile_merlin,
+		"cvp": cvp,
+		"debug": debug
+	})
+
+	save_results = {
+		"model": args.model,
+		"dataset": args.dataset,
+		"constants": serializable_constants,  # 직렬화 가능한 상수들 추가
+		"test_time_seconds": test_time,
+		"result_df": df.to_dict(orient='records'),  # DataFrame은 기본적으로 직렬화 가능
+		"evaluation_metrics": serializable_result
+	}
+
+	json_path = os.path.join(output_folder, f"{args.model}_{args.dataset}_results.json")
+	with open(json_path, 'w', encoding='utf-8') as f:
+		json.dump(save_results, f, ensure_ascii=False, indent=4)
+	print(f"Results saved to {json_path}")
 
 if __name__ == '__main__':
 	main()

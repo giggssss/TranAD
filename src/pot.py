@@ -157,5 +157,5 @@ def pot_eval(init_score, score, label, q=1e-5, level=0.02):
         'FN': p_t[6],
         'ROC/AUC': p_t[7],
         'threshold': pot_th,
-        # 'pot-latency': p_latency
+        'pot-latency': p_latency
     }, np.array(pred)

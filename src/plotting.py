@@ -26,11 +26,20 @@ def to_numpy(x):
         raise TypeError("Input must be a torch.Tensor or numpy.ndarray")
 
 def plotter(name, y_true, y_pred, ascore, labels):
+    dimension_names = ['initDegreeX', 'initDegreeY', 'initDegreeZ',
+                      'degreeXAmount', 'degreeYAmount', 'degreeZAmount',
+                      'initCrack', 'crackAmount', 'temperature', 'humidity']
+    
     if 'TranAD' in name:
         y_true = torch.roll(y_true, 1, 0)
     os.makedirs(os.path.join('plots', name), exist_ok=True)
     pdf = PdfPages(f'plots/{name}/output.pdf')
     for dim in range(y_true.shape[1]):
+        if dim >= len(dimension_names):
+            dim_name = f'Dimension {dim}'
+        else:
+            dim_name = dimension_names[dim]
+        
         y_t, y_p, l, a_s = y_true[:, dim], y_pred[:, dim], labels[:, dim], ascore[:, dim]
         
         # 텐서 또는 넘파이 배열을 넘파이 배열로 변환
@@ -52,26 +61,33 @@ def plotter(name, y_true, y_pred, ascore, labels):
         
         fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
         ax1.set_ylabel('Value')
-        ax1.set_title(f'Dimension = {dim}')
+        ax1.set_title(f'Dimension{dim} = {dim_name}')
         
         # 실제 값과 예측 값 플롯
         ax1.plot(y_t_smooth, linewidth=0.2, label='True')
         ax1.plot(y_p_smooth, '-', alpha=0.6, linewidth=0.3, label='Predicted')
         
+        anomalies_indices = np.where(l == 1)[0]
+        ax1.scatter(anomalies_indices, y_t_smooth[anomalies_indices], color='b', s=1, label='Detected Anomaly')
+        
+        
         # 레이블 플롯 (이상치 표시)
         ax3 = ax1.twinx()
+        anomalies_TP = np.intersect1d(anomalies_indices, anomalies)
+        # ax3.fill_between(np.arange(anomalies_TP.shape[0]), anomalies_TP, color='blue', alpha=0.2)
         # ax3.plot(l, '--', linewidth=0.3, alpha=0.5)
-        ax3.fill_between(np.arange(l.shape[0]), l, color='blue', alpha=0.3)
-        if dim == 0:
-            ax1.legend(ncol=2, bbox_to_anchor=(0.6, 1.02))
+        # ax3.fill_between(np.arange(l.shape[0]), l, color='blue', alpha=0.2)
+        
+        # if dim == 0:
+            # ax1.legend(ncol=2, bbox_to_anchor=(0.6, 1.02))
         
         # 이상치 점수 플롯
         ax2.plot(a_s_smooth, linewidth=0.2, color='g', label='Anomaly Score')
-        ax2.axhline(y=threshold, color='r', linestyle='--', label='Threshold')
-        ax2.scatter(anomalies, a_s_smooth[anomalies], color='r', s=10, label='Detected Anomaly')
+        ax2.axhline(y=threshold, color='r', linestyle='--', label='Threshold', linewidth=0.2)
+        ax2.scatter(anomalies, a_s_smooth[anomalies], color='r', s=1, label='Detected Anomaly')
         ax2.set_xlabel('Timestamp')
         ax2.set_ylabel('Anomaly Score')
-        ax2.legend(loc='upper right', fontsize='small')
+        # ax2.legend(loc='upper right', fontsize='small')
         
         pdf.savefig(fig)
         plt.close()
