@@ -130,16 +130,6 @@ def sample_data(data, labels, max_samples=10000):
     return sampled_data, sampled_labels
 
 def backprop(epoch, model, data, dataO, optimizer, scheduler, training = True):
-	if not training:
-		# 테스트 시 동일한 간격으로 데이터 샘플링
-		# 샘플링된 레이터와 레이블
-		if len(data) > 20000:
-			sampled_data, sampled_labels = sample_data(data, dataO)
-		else:
-			sampled_data, sampled_labels = data, dataO
-		print(f'Sampled test data size: {len(sampled_data)} (original: {len(data)})')
-		data, dataO = sampled_data, sampled_labels
-	
 	l = nn.MSELoss(reduction = 'mean' if training else 'none')
 	feats = dataO.shape[1]
 	if 'DAGMM' in model.name:
@@ -392,6 +382,8 @@ def main():
 		sampled_testD, sampled_labels = sample_data(testD, labels, max_samples=20000)
 	else:
 		sampled_testD, sampled_labels = testD, labels
+	
+	print(f'test data size: {len(sampled_testD)}')
 	print(f"샘플링된 레이블의 이상치 수: {np.sum(sampled_labels)}")
 	loss, y_pred = backprop(0, model, sampled_testD, testO, optimizer, scheduler, training=False)
 	test_time = time() - start_time
@@ -401,6 +393,7 @@ def main():
 	if 'TranAD' in model.name:
 		testO = torch.roll(testO, 1, 0) 
 	plotter(f'{args.model}_{args.dataset}_test', testO, y_pred, loss, sampled_labels)
+
 
 	### Scores
 	df = pd.DataFrame()

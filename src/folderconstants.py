@@ -1,3 +1,3 @@
 # Data folders
-output_folder = 'processed'
+output_folder = '/workspace/data/github/TranAD/processed'
 data_folder = 'data'

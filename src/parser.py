@@ -23,6 +23,8 @@ parser.add_argument('--epoch',
 parser.add_argument('--test', 
 					action='store_true', 
 					help="test the model")
+parser.set_defaults(test=True)
+
 parser.add_argument('--retrain', 
 					action='store_true', 
 					help="retrain the model")

@@ -126,7 +126,7 @@ class DataProcessor:
         """
         df = df.set_index('timestamp')
         # 10분 간격으로 데이터 그룹화 (group_keys=False 추가)
-        grouped = df.groupby(pd.Grouper(freq='h'), group_keys=False)
+        grouped = df.groupby(pd.Grouper(freq='min'), group_keys=False)
         sampled_df = grouped.apply(lambda x: x.sample(n=1) if not x.empty else x)
         sampled_df = sampled_df.dropna().reset_index()  # 'timestamp' 컬럼이 한 번만 포함되도록 설정
         self.logger.info(f"샘플링된 트레인 데이터 크기: {sampled_df.shape}")
@@ -386,4 +386,4 @@ if __name__ == "__main__":
     
     processor_custom = DataProcessor(outlier_factor=args.outlier_factor, normalize=args.normalize)
     train_data_custom, data_min_custom, data_max_custom = processor_custom.process_train()
-    val_data_custom, val_labels_custom = processor_custom.process_val()
+    # val_data_custom, val_labels_custom = processor_custom.process_val()

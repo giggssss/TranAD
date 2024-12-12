@@ -144,6 +144,24 @@ def pot_eval(init_score, score, label, q=1e-5, level=0.02):
     ret = s.run(dynamic=False)  # run
     pot_th = np.mean(ret['thresholds']) * lm[1]
     pred, p_latency = adjust_predicts(score, label, pot_th, calc_latency=True)
+    
+    # y_pred 결과를 csv로 저장
+    import pandas as pd
+    import os
+    
+    pred_df = pd.DataFrame(pred)
+    script_dir = "/workspace/data/github/TranAD"
+    output_filename = f'{args.model}_{args.dataset}_pred.csv'
+    output_path = os.path.join(script_dir, output_filename)
+    pred_df.to_csv(output_path, index=False, encoding='utf-8-sig')
+    
+    # label의 내용을 bool로 변경해서 csv 파일로 저장
+    label_bool = label.astype(bool)
+    label_df = pd.DataFrame(label_bool)
+    output_filename = f'{args.model}_{args.dataset}_label.csv'
+    output_path = os.path.join(script_dir, output_filename)
+    label_df.to_csv(output_path, index=False, encoding='utf-8-sig')
+    
     p_t = calc_point2point(pred, label)
     accuracy = (p_t[3] + p_t[4]) / (p_t[3] + p_t[4] + p_t[5] + p_t[6])
     return {
