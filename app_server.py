@@ -4,7 +4,7 @@
 
 from flask import Flask, request, jsonify
 from datetime import datetime
-from collections import deque, OrderedDict
+from collections import deque, OrderedDict, defaultdict
 from datetime import timedelta
 
 import time
@@ -64,115 +64,116 @@ def load_model(model_name, model_path, input_dim):
     return model
 
 # -----------------------------------------------------------
-# ThresholdManager Class Addition
+# ThresholdManager 클래스 수정
 # -----------------------------------------------------------
 class ThresholdManager:
     """
-    Class that accumulates anomaly_scores over a recent period (default: 1 year) to calculate thresholds.
-    Users can choose a recent 3 months or 1 year based on options.
+    각 모델별로 anomaly_scores를 누적하여 thresholds를 계산하는 클래스.
     """
     def __init__(self, window_months=12, storage_path="anomaly_scores.json"):
         """
-        Initialization function.
+        초기화 함수.
         
         Args:
-            window_months (int): Number of months to retain history (default: 12 months).
-            storage_path (str): File path to store anomaly_scores.
+            window_months (int): 유지할 기간의 개월 수 (기본: 12개월).
+            storage_path (str): anomaly_scores를 저장할 파일 경로.
         """
         self.window_months = window_months
         self.storage_path = storage_path
-        self.anomaly_history = deque()
+        self.anomaly_history = defaultdict(deque)  # 모델별로 deque를 관리
         self.load_history()
 
     def load_history(self):
         """
-        Loads the stored anomaly_scores history.
+        저장된 anomaly_scores 히스토리를 로드.
         """
         if os.path.exists(self.storage_path):
             try:
                 with open(self.storage_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    for entry in data:
-                        timestamp = datetime.strptime(entry["timestamp"], "%Y-%m-%d %H:%M:%S")
-                        scores = entry["anomaly_scores"]
-                        self.anomaly_history.append({"timestamp": timestamp, "scores": scores})
+                    for model_name, entries in data.items():
+                        for entry in entries:
+                            timestamp = datetime.strptime(entry["timestamp"], "%Y-%m-%d %H:%M:%S")
+                            scores = entry["anomaly_scores"]
+                            self.anomaly_history[model_name].append({"timestamp": timestamp, "scores": scores})
                 self.prune_history()
-                logger.info(f"Loaded {len(self.anomaly_history)} anomaly scores from history.")
+                logger.info(f"Loaded anomaly scores for {len(self.anomaly_history)} models from history.")
             except Exception as e:
-                logger.error(f"Error occurred while loading history: {e}")
-                self.anomaly_history = deque()
+                logger.error(f"히스토리 로드 중 오류 발생: {e}")
+                self.anomaly_history = defaultdict(deque)
         else:
-            self.anomaly_history = deque()
-            logger.info("History file does not exist. A new one will be created.")
+            self.anomaly_history = defaultdict(deque)
+            logger.info("히스토리 파일이 존재하지 않습니다. 새로 생성됩니다.")
 
     def save_history(self):
         """
-        Saves the current anomaly_scores history.
+        현재 anomaly_scores 히스토리를 저장.
         """
         try:
-            # Save the current state even if anomaly_history is empty.
-            data = [
-                {
-                    "timestamp": entry["timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
-                    "anomaly_scores": entry["scores"]
-                }
-                for entry in self.anomaly_history
-            ]
+            data = {
+                model_name: [
+                    {
+                        "timestamp": entry["timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
+                        "anomaly_scores": entry["scores"]
+                    }
+                    for entry in entries
+                ]
+                for model_name, entries in self.anomaly_history.items()
+            }
             with open(self.storage_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
-            logger.info(f"Saved {len(data)} anomaly scores to history.")
+            logger.info(f"히스토리에 {len(data)} 모델의 anomaly scores가 저장되었습니다.")
         except Exception as e:
-            logger.error(f"Error occurred while saving history: {e}")
+            logger.error(f"히스토리 저장 중 오류 발생: {e}")
 
     def prune_history(self):
         """
-        Prunes the history to retain only data within the set period.
+        설정된 기간 내의 데이터만 유지하도록 히스토리를 정리.
         """
-        if self.anomaly_history:
-            latest_timestamp = max(entry["timestamp"] for entry in self.anomaly_history)
-            cutoff_date = latest_timestamp - timedelta(days=self.window_months * 30)  # Approximate month calculation
-        else:
-            cutoff_date = datetime.now() - timedelta(days=self.window_months * 30)  # Approximate month calculation
-        initial_length = len(self.anomaly_history)
-        while self.anomaly_history and self.anomaly_history[0]["timestamp"] < cutoff_date:
-            self.anomaly_history.popleft()
-        pruned_length = len(self.anomaly_history)
-        logger.info(f"Pruned history: reduced from {initial_length} to {pruned_length} entries.")
+        cutoff_date = datetime.now() - timedelta(days=self.window_months * 30)  # 개월을 일수로 근사 계산
+        for model_name, entries in self.anomaly_history.items():
+            initial_length = len(entries)
+            while entries and entries[0]["timestamp"] < cutoff_date:
+                entries.popleft()
+            pruned_length = len(entries)
+            logger.info(f"모델 '{model_name}'의 히스토리: {initial_length}에서 {pruned_length}로 정리됨.")
 
-    def add_anomaly_scores(self, timestamp, scores):
+    def add_anomaly_scores(self, model_name, timestamp, scores):
         """
-        Adds new anomaly_scores to the history.
+        특정 모델의 anomaly_scores를 히스토리에 추가.
         
         Args:
-            timestamp (datetime): Timestamp of the data.
-            scores (list): List of anomaly_scores.
+            model_name (str): 모델 이름.
+            timestamp (datetime): 데이터의 타임스탬프.
+            scores (list): anomaly_scores 리스트.
         """
-        self.anomaly_history.append({"timestamp": timestamp, "scores": scores})
-        logger.info(f"Added anomaly scores: {timestamp} - {scores}")
+        self.anomaly_history[model_name].append({"timestamp": timestamp, "scores": scores})
+        logger.info(f"모델 '{model_name}'에 anomaly scores 추가: {timestamp} - {scores}")
         self.prune_history()
         self.save_history()
 
-    def calculate_thresholds(self, current_scores):
+    def calculate_thresholds(self, model_name, current_scores):
         """
-        Calculates thresholds based on anomaly_scores over the set period.
-        If no data exists, uses the current scores.
-    
+        특정 모델의 anomaly_scores를 기반으로 thresholds 계산.
+        데이터가 없으면 현재 scores로 계산.
+        
         Args:
-            current_scores (numpy.ndarray): Current anomaly_scores
-    
+            model_name (str): 모델 이름.
+            current_scores (numpy.ndarray): 현재 anomaly_scores.
+        
         Returns:
-            numpy.ndarray: Calculated thresholds
+            numpy.ndarray: 계산된 thresholds.
         """
-        if not self.anomaly_history:
-            logger.warning("No data in history. Calculating thresholds based on current anomaly_scores.")
+        if not self.anomaly_history[model_name]:
+            logger.warning(f"모델 '{model_name}'의 히스토리에 데이터가 없습니다. 현재 anomaly_scores로 thresholds 계산.")
             mean_scores = np.mean(current_scores, axis=0)
             std_scores = np.std(current_scores, axis=0)
         else:
-            all_scores = np.array([entry["scores"] for entry in self.anomaly_history])
+            all_scores = np.array([entry["scores"] for entry in self.anomaly_history[model_name]])
             mean_scores = np.mean(all_scores, axis=0)
             std_scores = np.std(all_scores, axis=0)
         thresholds = mean_scores + 3 * std_scores
-        logger.info(f"Calculated thresholds: {thresholds}")
+        logger.info(f"모델 '{model_name}'의 계산된 thresholds: {thresholds}")
         return thresholds
 
 # -----------------------------------------------------------
@@ -336,7 +337,7 @@ sensor_manager = SensorManager(
 )
 
 # -----------------------------------------------------------
-# ThresholdManager 인스턴스 초기화 추가
+# ThresholdManager 인스턴스 초기화 수정
 # -----------------------------------------------------------
 threshold_manager = ThresholdManager()
 
@@ -391,6 +392,8 @@ def inference_endpoint():
     try:
         sensor_info = sensor_manager.get_model(device_id, sensor_type)
         sensor_type = sensor_info["sensor_info"]["type"]
+        model_version = sensor_info["sensor_info"]["model_version"]  # 추가된 부분
+        model_name = f"{sensor_type}_{model_version}"  # 모델 이름 정의
     except ValueError as ve:
         return jsonify({"error": {"code": "INVALID_SENSOR_TYPE", "message": str(ve)}}), 400
     except Exception as e:
@@ -441,7 +444,7 @@ def inference_endpoint():
                 "prediction": prediction.tolist() if isinstance(prediction, np.ndarray) else prediction
             },
             "model_info": {
-                "version": f"{sensor_info['sensor_info']['type']} {sensor_info['sensor_info']['model_version']}",
+                "version": model_name,  # 수정된 부분
                 "inference_time_ms": round(inference_time_ms, 2)
             }
         }
@@ -526,89 +529,6 @@ def manage_window_months():
             logger.error(f"Error occurred while updating window_months: {e}")
             return jsonify({"error": {"code": "SERVER_ERROR", "message": "An error occurred while updating the settings."}}), 500
 
-# # -----------------------------------------------------------
-# # model_inference 함수 수정
-# # -----------------------------------------------------------
-# def model_inference(device_id, sensor_values, timestamp):
-#     """
-#     센서에 적합한 모델을 사용하여 추론을 수행하는 함수.
-    
-#     Args:
-#         device_id (str): 디바이스 ID.
-#         sensor_values (dict): 센서 데이터.
-#         timestamp (str): 데이터의 타임스탬프.
-    
-#     Returns:
-#         tuple: (status, prediction, anomaly_scores, thresholds)
-#     """
-#     try:
-#         # timestamp 파싱 및 시간 관련 특성 추출
-#         dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
-#         hour = dt.hour
-#         day_of_week = dt.weekday()
-#         month = dt.month
-
-#         # 시간 관련 특성 추가
-#         sensor_values_extended = {**sensor_values, "hour": hour, "day_of_week": day_of_week, "month": month}
-
-#         # 확장된 센서 데이터 처리
-#         sensor_data = np.array(list(sensor_values_extended.values()))
-#         model_info = sensor_manager.get_model(device_id, sensor_values.get("type"))
-#         model = model_info["model"]
-#         sensor_type = model_info["sensor_info"]["type"]
-        
-#         input_tensor = torch.tensor(sensor_data, dtype=torch.double)
-#         prediction = model(input_tensor)
-#         anomaly_scores = prediction.detach().numpy()
-        
-#         thresholds = threshold_manager.calculate_thresholds(anomaly_scores)
-#         status = (anomaly_scores > thresholds).any()
-        
-#         # anomaly_scores를 threshold_manager에 추가
-#         threshold_manager.add_anomaly_scores(dt, anomaly_scores.tolist())
-        
-#         return status, prediction, anomaly_scores, thresholds
-#     except Exception as e:
-#         logger.error(f"모델 추론 중 오류 발생: {e}")
-#         raise
-
-# -----------------------------------------------------------
-# preprocess_sensor_data 함수 추가
-# -----------------------------------------------------------
-def preprocess_sensor_data(sensor_values_extended, input_dim):
-    """
-    센서 데이터를 전처리하는 함수.
-
-    Args:
-        sensor_values_extended (dict): 확장된 센서 데이터.
-        input_dim (int): 센서 데이터의 차원 (9 또는 7).
-
-    Returns:
-        tuple: 전처리된 window 텐서과 elem 텐서.
-    """
-    try:
-        # 센서 데이터를 NumPy 배열로 변환
-        sensor_array = np.array(list(sensor_values_extended.values()), dtype=np.float64)
-
-        # 데이터 정규화
-        try:
-            normalized_data, _, _ = data_processor.normalize3(sensor_array)
-        except Exception as e:
-            logger.error(f"데이터 정규화 중 오류 발생: {e}")
-            raise
-
-        # 정규화된 데이터를 텐서로 변환
-        sensor_tensor = torch.from_numpy(normalized_data).double().unsqueeze(0)  # Shape: [1, 13]
-        sensor_tensor = sensor_tensor.expand(10, -1)  # Shape: [10, 13]
-
-        window = sensor_tensor.unsqueeze(1)  # Shape: [10, 1, 13]
-        elem = window[-1, :, :].view(1, 1, input_dim)  # Shape: [1, 1, 13]
-
-        return window, elem
-    except Exception as e:
-        logger.error(f"preprocess_sensor_data 중 오류 발생: {e}")
-        raise
-
 # -----------------------------------------------------------
 # model_inference 함수 수정
 # -----------------------------------------------------------
@@ -644,9 +564,11 @@ def model_inference(device_id, sensor_values, timestamp):
         model = model_info["model"]
         sensor_type = model_info["sensor_info"]["type"]
         input_dim = model_info['sensor_info']['input_dim']
+        model_version = model_info['sensor_info']['model_version']  # 추가된 부분
+        model_name = f"{sensor_type}_{model_version}"  # 모델 이름 정의
 
         # 확장된 센서 데이터 전처리
-        window, elem = preprocess_sensor_data(sensor_values_extended, input_dim)  # 입력 차원에 맞게 조정 (예: 9 또는 7)
+        window, elem = preprocess_sensor_data(sensor_values_extended, input_dim)
         output = model(window, elem)
         if isinstance(output, tuple):
             output = output[1]
@@ -656,13 +578,13 @@ def model_inference(device_id, sensor_values, timestamp):
         anomaly_score = mse_loss(output, elem)[0].detach().cpu().numpy()
 
         # Threshold 계산
-        thresholds = threshold_manager.calculate_thresholds(anomaly_score)
+        thresholds = threshold_manager.calculate_thresholds(model_name, anomaly_score)  # 수정된 부분
 
         # 상태 결정
         status = (anomaly_score > thresholds).any()
 
         # anomaly_score를 threshold_manager에 추가
-        threshold_manager.add_anomaly_scores(dt, anomaly_score.tolist())
+        threshold_manager.add_anomaly_scores(model_name, dt, anomaly_score.tolist())  # 수정된 부분
 
         # 모델 예측 결과
         prediction = output.detach().cpu().numpy().flatten()
@@ -672,6 +594,43 @@ def model_inference(device_id, sensor_values, timestamp):
         logger.error(f"모델 추론 중 오류 발생: {e}")
         raise
     
+
+# -----------------------------------------------------------
+# preprocess_sensor_data 함수 추가
+# -----------------------------------------------------------
+def preprocess_sensor_data(sensor_values_extended, input_dim):
+    """
+    센서 데이터를 전처리하는 함수.
+
+    Args:
+        sensor_values_extended (dict): 확장된 센서 데이터.
+        input_dim (int): 센서 데이터의 차원 (9 또는 7).
+
+    Returns:
+        tuple: 전처리된 window 텐서과 elem 텐서.
+    """
+    try:
+        # 센서 데이터를 NumPy 배열로 변환
+        sensor_array = np.array(list(sensor_values_extended.values()), dtype=np.float64)
+
+        # 데이터 정규화
+        try:
+            normalized_data, _, _ = data_processor.normalize3(sensor_array)
+        except Exception as e:
+            logger.error(f"데이터 정규화 중 오류 발생: {e}")
+            raise
+
+        # 정규화된 데이터를 텐서로 변환
+        sensor_tensor = torch.from_numpy(normalized_data).double().unsqueeze(0)  # Shape: [1, 13]
+        sensor_tensor = sensor_tensor.expand(10, -1)  # Shape: [10, 13]
+
+        window = sensor_tensor.unsqueeze(1)  # Shape: [10, 1, 13]
+        elem = window[-1, :, :].view(1, 1, input_dim)  # Shape: [1, 1, input_dim]
+
+        return window, elem
+    except Exception as e:
+        logger.error(f"preprocess_sensor_data 중 오류 발생: {e}")
+        raise
 
 # -----------------------------------------------------------
 # Main Execution Block Modification
