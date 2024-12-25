@@ -4,8 +4,10 @@
 
 from flask import Flask, request, jsonify
 from datetime import datetime
+from collections import deque, OrderedDict
+from datetime import timedelta
+
 import time
-import re
 import torch
 import numpy as np
 import os
@@ -13,9 +15,8 @@ import sys
 import logging
 import src.dataprocessor as dp
 import json
+import shutil
 import torch.nn as nn
-from collections import deque, OrderedDict
-from datetime import datetime, timedelta
 
 # Import model classes
 import src.models   # Add necessary models
@@ -240,7 +241,7 @@ class SensorManager:
                 json.dump(config, f, ensure_ascii=False, indent=4)
             logger.info("Sensor configuration file updated successfully.")
         except Exception as e:
-            logger.error(f"Error occurred while saving sensor configurations: {e}")
+            logger.error(f"Error occurred while saving sensor configuration: {e}")
 
     def add_new_sensor(self, sensor_id, sensor_type):
         """
@@ -253,55 +254,67 @@ class SensorManager:
         if sensor_type == "Tilt Sensor":
             model_name = "TranAD"
             model_version = "base_model_l"
-            model_path = "/workspace/checkpoints/TranAD_Gyeongsan/base_model_l.ckpt"
-            input_dim = 13
+            base_model_path = "/workspace/checkpoints/TranAD_Gyeongsan/base_model_l.ckpt"
+            new_model_filename = f"TiltSensor_{sensor_id}.ckpt"
+            new_model_path = f"/workspace/checkpoints/TranAD_Gyeongsan/{new_model_filename}"
+            input_dim = 9
         elif sensor_type == "Crack Sensor":
-            model_name = "CrackAD"
+            model_name = "TranAD"
             model_version = "base_model_c"
-            model_path = "/workspace/checkpoints/TranAD_Gyeongsan/base_model_c.ckpt"
-            input_dim = 8
+            base_model_path = "/workspace/checkpoints/TranAD_Gyeongsan/base_model_c.ckpt"
+            new_model_filename = f"CrackSensor_{sensor_id}.ckpt"
+            new_model_path = f"/workspace/checkpoints/TranAD_Gyeongsan/{new_model_filename}"
+            input_dim = 7
         else:
             logger.error(f"Unsupported sensor type: {sensor_type}")
             raise ValueError(f"Unsupported sensor type: {sensor_type}")
         
+        # Copy the base model to a new model file
+        try:
+            shutil.copyfile(base_model_path, new_model_path)
+            logger.info(f"Copied base model from {base_model_path} to {new_model_path}")
+        except Exception as e:
+            logger.error(f"Failed to copy base model: {e}")
+            raise
+        
         self.sensor_info[sensor_id] = {
             "type": sensor_type,
             "model_name": model_name,
-            "model_version": model_version,
-            "model_path": model_path,
+            "model_version": f"{sensor_type}_{sensor_id}",
+            "model_path": new_model_path,
             "input_dim": input_dim
         }
         self.save_sensor_config()
-        logger.info(f"Added new sensor: {sensor_id} ({sensor_type})")
+        logger.info(f"Added new sensor: {sensor_id} ({sensor_type}) with model {new_model_path}")
 
     def get_model(self, sensor_id, sensor_type=None):
         """
         Returns the model corresponding to the sensor ID. Loads dynamically if necessary.
-        Automatically adds a sensor based on the provided sensor_type if the sensor ID is unknown.
+        Automatically adds the sensor if the sensor ID is unknown.
         
         Args:
             sensor_id (str): Unique ID of the sensor.
             sensor_type (str, optional): Type of the sensor. Required when adding a new sensor.
-            
+        
         Returns:
-            torch.nn.Module: Loaded model.
+            dict: Sensor information including the loaded model.
         """
         if sensor_id not in self.sensor_info:
             if sensor_type is None:
                 logger.error(f"Sensor type not provided for unknown sensor ID: {sensor_id}")
-                raise ValueError("Unknown sensor ID and sensor type was not provided.")
-            logger.info(f"Unknown sensor ID requested: {sensor_id}. Automatically adding the sensor.")
+                raise ValueError("Unknown sensor ID and sensor type not provided.")
+            logger.info(f"Unknown sensor ID requested: {sensor_id}. Adding new sensor.")
             self.add_new_sensor(sensor_id, sensor_type)
         
         sensor = self.sensor_info[sensor_id]
         model_key = f"{sensor['type']}_{sensor['model_version']}"
         
-        # Check if the model is in the cache
+        # Check if the model is already in the cache
         if model_key in self.model_cache:
             model = self.model_cache.pop(model_key)
             # Move the recently used model to the end of the cache
             self.model_cache[model_key] = model
-            return model
+            return {"sensor_info": sensor, "model": model}
         else:
             # Load the model and add it to the cache
             model = load_model(sensor['model_name'], sensor['model_path'], sensor['input_dim'])
@@ -312,7 +325,7 @@ class SensorManager:
                 removed_key, removed_model = self.model_cache.popitem(last=False)
                 del removed_model
                 logger.info(f"Cache capacity exceeded. Removed model: {removed_key}")
-            return model
+            return {"sensor_info": sensor, "model": model}
 
 # -----------------------------------------------------------
 # SensorManager Instance Initialization Modification
@@ -321,6 +334,11 @@ sensor_manager = SensorManager(
     sensor_config_path=os.path.join(os.path.dirname(__file__), "sensor_config.json"),
     cache_size=100  # Set cache capacity as needed
 )
+
+# -----------------------------------------------------------
+# ThresholdManager 인스턴스 초기화 추가
+# -----------------------------------------------------------
+threshold_manager = ThresholdManager()
 
 # -----------------------------------------------------------
 # Inference Endpoint Modification
@@ -362,17 +380,17 @@ def inference_endpoint():
         return jsonify({"error": {"code": "INVALID_INPUT", "message": "Please provide valid JSON data."}}), 400
 
     if "deviceId" not in req_data:
-        return jsonify({"error": {"code": "MISSING_FIELD", "message": "Missing 'deviceId' field"}}), 400
+        return jsonify({"error": {"code": "MISSING_FIELD", "message": "Missing 'deviceId' field."}}), 400
 
     if "sensor_type" not in req_data:
-        return jsonify({"error": {"code": "MISSING_FIELD", "message": "Missing 'sensor_type' field"}}), 400
+        return jsonify({"error": {"code": "MISSING_FIELD", "message": "Missing 'sensor_type' field."}}), 400
 
     device_id = req_data["deviceId"]
     sensor_type = req_data["sensor_type"]
 
     try:
         sensor_info = sensor_manager.get_model(device_id, sensor_type)
-        sensor_type = sensor_info["type"]
+        sensor_type = sensor_info["sensor_info"]["type"]
     except ValueError as ve:
         return jsonify({"error": {"code": "INVALID_SENSOR_TYPE", "message": str(ve)}}), 400
     except Exception as e:
@@ -386,18 +404,22 @@ def inference_endpoint():
     payload = req_data["payload"]
     timestamp_value = req_data["@timestamp"]
     
-    # Extract sensor values
+    # Extract sensor values based on sensor type
     if sensor_type == "Tilt Sensor":
         sensor_values = {
-            "value1": payload["value1"],
-            "value2": payload["value2"],
-            "degreeXAmount": payload["degreeXAmount"],
-            "degreeYAmount": payload["degreeYAmount"]
+            "initDegreeX": payload.get("initDegreeX"),
+            "initDegreeY": payload.get("initDegreeY"),
+            "degreeXAmount": payload.get("degreeXAmount"),
+            "degreeYAmount": payload.get("degreeYAmount"),
+            "temperature": payload.get("temperature"),
+            "humidity": payload.get("humidity")
         }
     elif sensor_type == "Crack Sensor":
         sensor_values = {
-            "crackAmount": payload["crackAmount"],
-            "crackAmount2": payload["crackAmount2"]
+            "initCrack": payload.get("initCrack"),
+            "crackAmount": payload.get("crackAmount"),
+            "temperature": payload.get("temperature"),
+            "humidity": payload.get("humidity")
         }
     else:
         sensor_values = {}
@@ -413,19 +435,47 @@ def inference_endpoint():
         "data": {
             "timestamp": timestamp_value,
             "inference_result": {
-                "status": status,
+                "status": str(status),
                 "anomaly_scores": anomaly_scores.tolist() if isinstance(anomaly_scores, np.ndarray) else anomaly_scores,
                 "thresholds": thresholds.tolist() if isinstance(thresholds, np.ndarray) else thresholds,
                 "prediction": prediction.tolist() if isinstance(prediction, np.ndarray) else prediction
             },
             "model_info": {
-                "version": f"{sensor_info['type']} {sensor_info['model_version']}",
+                "version": f"{sensor_info['sensor_info']['type']} {sensor_info['sensor_info']['model_version']}",
                 "inference_time_ms": round(inference_time_ms, 2)
             }
         }
     }
     logger.info(f"Response generated: {response}")
     return jsonify(response), 200
+
+# -----------------------------------------------------------
+# Validate Input Function Modification
+# -----------------------------------------------------------
+def validate_input(req_data, sensor_type):
+    """
+    Validates the incoming request data based on the sensor type.
+    
+    Args:
+        req_data (dict): The incoming request data.
+        sensor_type (str): The type of the sensor.
+        
+    Returns:
+        tuple: (is_valid (bool), error_message (str))
+    """
+    required_fields = []
+    if sensor_type == "Tilt Sensor":
+        required_fields = ["initDegreeX", "initDegreeY", "degreeXAmount", "degreeYAmount", "temperature", "humidity"]
+    elif sensor_type == "Crack Sensor":
+        required_fields = ["initCrack", "crackAmount", "temperature", "humidity"]
+    else:
+        return False, "Unsupported sensor type."
+    
+    missing_fields = [field for field in required_fields if field not in req_data["payload"]]
+    if missing_fields:
+        return False, f"Missing fields in payload: {', '.join(missing_fields)}"
+    
+    return True, ""
 
 # -----------------------------------------------------------
 # API Endpoint to Read and Modify window_months Configuration
@@ -475,6 +525,153 @@ def manage_window_months():
         except Exception as e:
             logger.error(f"Error occurred while updating window_months: {e}")
             return jsonify({"error": {"code": "SERVER_ERROR", "message": "An error occurred while updating the settings."}}), 500
+
+# # -----------------------------------------------------------
+# # model_inference 함수 수정
+# # -----------------------------------------------------------
+# def model_inference(device_id, sensor_values, timestamp):
+#     """
+#     센서에 적합한 모델을 사용하여 추론을 수행하는 함수.
+    
+#     Args:
+#         device_id (str): 디바이스 ID.
+#         sensor_values (dict): 센서 데이터.
+#         timestamp (str): 데이터의 타임스탬프.
+    
+#     Returns:
+#         tuple: (status, prediction, anomaly_scores, thresholds)
+#     """
+#     try:
+#         # timestamp 파싱 및 시간 관련 특성 추출
+#         dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+#         hour = dt.hour
+#         day_of_week = dt.weekday()
+#         month = dt.month
+
+#         # 시간 관련 특성 추가
+#         sensor_values_extended = {**sensor_values, "hour": hour, "day_of_week": day_of_week, "month": month}
+
+#         # 확장된 센서 데이터 처리
+#         sensor_data = np.array(list(sensor_values_extended.values()))
+#         model_info = sensor_manager.get_model(device_id, sensor_values.get("type"))
+#         model = model_info["model"]
+#         sensor_type = model_info["sensor_info"]["type"]
+        
+#         input_tensor = torch.tensor(sensor_data, dtype=torch.double)
+#         prediction = model(input_tensor)
+#         anomaly_scores = prediction.detach().numpy()
+        
+#         thresholds = threshold_manager.calculate_thresholds(anomaly_scores)
+#         status = (anomaly_scores > thresholds).any()
+        
+#         # anomaly_scores를 threshold_manager에 추가
+#         threshold_manager.add_anomaly_scores(dt, anomaly_scores.tolist())
+        
+#         return status, prediction, anomaly_scores, thresholds
+#     except Exception as e:
+#         logger.error(f"모델 추론 중 오류 발생: {e}")
+#         raise
+
+# -----------------------------------------------------------
+# preprocess_sensor_data 함수 추가
+# -----------------------------------------------------------
+def preprocess_sensor_data(sensor_values_extended, input_dim):
+    """
+    센서 데이터를 전처리하는 함수.
+
+    Args:
+        sensor_values_extended (dict): 확장된 센서 데이터.
+        input_dim (int): 센서 데이터의 차원 (9 또는 7).
+
+    Returns:
+        tuple: 전처리된 window 텐서과 elem 텐서.
+    """
+    try:
+        # 센서 데이터를 NumPy 배열로 변환
+        sensor_array = np.array(list(sensor_values_extended.values()), dtype=np.float64)
+
+        # 데이터 정규화
+        try:
+            normalized_data, _, _ = data_processor.normalize3(sensor_array)
+        except Exception as e:
+            logger.error(f"데이터 정규화 중 오류 발생: {e}")
+            raise
+
+        # 정규화된 데이터를 텐서로 변환
+        sensor_tensor = torch.from_numpy(normalized_data).double().unsqueeze(0)  # Shape: [1, 13]
+        sensor_tensor = sensor_tensor.expand(10, -1)  # Shape: [10, 13]
+
+        window = sensor_tensor.unsqueeze(1)  # Shape: [10, 1, 13]
+        elem = window[-1, :, :].view(1, 1, input_dim)  # Shape: [1, 1, 13]
+
+        return window, elem
+    except Exception as e:
+        logger.error(f"preprocess_sensor_data 중 오류 발생: {e}")
+        raise
+
+# -----------------------------------------------------------
+# model_inference 함수 수정
+# -----------------------------------------------------------
+def model_inference(device_id, sensor_values, timestamp):
+    """
+    센서에 적합한 모델을 사용하여 추론을 수행하는 함수.
+    
+    Args:
+        device_id (str): 디바이스 ID.
+        sensor_values (dict): 센서 데이터.
+        timestamp (str): 데이터의 타임스탬프.
+    
+    Returns:
+        tuple: (status, prediction, anomaly_scores, thresholds)
+    """
+    try:
+        # timestamp 파싱 및 시간 관련 특성 추출
+        dt = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+        hour = dt.hour
+        day_of_week = dt.weekday()
+        month = dt.month
+
+        # 시간 관련 특성 추가
+        sensor_values_extended = {
+            **sensor_values,
+            "hour": hour,
+            "day_of_week": day_of_week,
+            "month": month
+        }
+
+        # 모델에 window와 elem 입력
+        model_info = sensor_manager.get_model(device_id, sensor_values.get("type"))
+        model = model_info["model"]
+        sensor_type = model_info["sensor_info"]["type"]
+        input_dim = model_info['sensor_info']['input_dim']
+
+        # 확장된 센서 데이터 전처리
+        window, elem = preprocess_sensor_data(sensor_values_extended, input_dim)  # 입력 차원에 맞게 조정 (예: 9 또는 7)
+        output = model(window, elem)
+        if isinstance(output, tuple):
+            output = output[1]
+
+        # MSE Loss 계산
+        mse_loss = nn.MSELoss(reduction='none')
+        anomaly_score = mse_loss(output, elem)[0].detach().cpu().numpy()
+
+        # Threshold 계산
+        thresholds = threshold_manager.calculate_thresholds(anomaly_score)
+
+        # 상태 결정
+        status = (anomaly_score > thresholds).any()
+
+        # anomaly_score를 threshold_manager에 추가
+        threshold_manager.add_anomaly_scores(dt, anomaly_score.tolist())
+
+        # 모델 예측 결과
+        prediction = output.detach().cpu().numpy().flatten()
+
+        return status, prediction, anomaly_score, thresholds
+    except Exception as e:
+        logger.error(f"모델 추론 중 오류 발생: {e}")
+        raise
+    
 
 # -----------------------------------------------------------
 # Main Execution Block Modification

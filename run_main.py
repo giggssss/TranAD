@@ -1,5 +1,6 @@
 import pickle
 import os
+import glob  # glob 모듈 추가
 import pandas as pd
 from tqdm import tqdm
 from src.models import *
@@ -35,9 +36,19 @@ def load_dataset(dataset):
 		if dataset == 'MSL': file = 'C-1_' + file
 		if dataset == 'UCR': file = '136_' + file
 		if dataset == 'NAB': file = 'ec2_request_latency_system_failure_' + file
-		loader.append(np.load(os.path.join(folder, f'{file}.npy')))
-	# loader = [i[:, debug:debug+1] for i in loader]
-	if args.less: loader[0] = cut_array(0.2, loader[0])
+		
+		# {file}로 시작하고 '.npy'로 끝나는 파일들 패턴
+		pattern = os.path.join(folder, f'{file}*.npy')
+		matching_files = glob.glob(pattern)
+		
+		if not matching_files:
+			raise Exception(f'No files found for pattern: {pattern}')
+		
+		for mf in matching_files:
+			loader.append(np.load(mf))
+	
+	if args.less:
+		loader[0] = cut_array(0.2, loader[0])
 	train_loader = DataLoader(loader[0], batch_size=loader[0].shape[0])
 	test_loader = DataLoader(loader[1], batch_size=loader[1].shape[0])
 	labels = loader[2]
@@ -398,8 +409,8 @@ def main():
 	### Scores
 	df = pd.DataFrame()
 	lossT, _ = backprop(0, model, trainD, trainO, optimizer, scheduler, training=False)
-	lossT = lossT[:, :10]
-	loss = loss[:, :10]
+	lossT = lossT[:, :-3]
+	loss = loss[:, :-3]
 	preds = []
 	for i in range(loss.shape[1]):
 		lt, l, ls = lossT[:, i], loss[:, i], sampled_labels[:, i]

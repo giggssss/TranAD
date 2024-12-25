@@ -26,9 +26,11 @@ def to_numpy(x):
         raise TypeError("Input must be a torch.Tensor or numpy.ndarray")
 
 def plotter(name, y_true, y_pred, ascore, labels):
-    dimension_names = ['initDegreeX', 'initDegreeY', 'initDegreeZ',
-                      'degreeXAmount', 'degreeYAmount', 'degreeZAmount',
-                      'initCrack', 'crackAmount', 'temperature', 'humidity']
+    # dimension_names = ['initDegreeX', 'initDegreeY', 'initDegreeZ',
+    #                   'degreeXAmount', 'degreeYAmount', 'degreeZAmount',
+    #                   'initCrack', 'crackAmount', 'temperature', 'humidity']
+    dimension_names = ['var1', 'var2', 'var3',
+                      'var4', 'var5', 'var6']
     
     if 'TranAD' in name:
         y_true = torch.roll(y_true, 1, 0)
@@ -92,3 +94,4 @@ def plotter(name, y_true, y_pred, ascore, labels):
         pdf.savefig(fig)
         plt.close()
     pdf.close()
+    print("plotting done")

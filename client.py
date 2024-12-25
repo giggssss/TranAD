@@ -96,7 +96,7 @@ def send_tilt_sensor_request():
     """
     Sends example tilt sensor data to the server.
     """
-    device_id = "sensor_03"
+    device_id = "sensor_01"
     sensor_type = "Tilt Sensor"
     sensor_payload = {
         "cnt": 2,
@@ -107,8 +107,8 @@ def send_tilt_sensor_request():
         "batLevel": 80,
         "temperature": -1,
         "humidity": 47,
-        "value1": -0.6,
-        "value2": -2.69,
+        "initDegreeX": -0.6,
+        "initDegreeY": -2.69,
         "degreeXAmount": 0.6,
         "degreeYAmount": 2.69
     }
@@ -130,21 +130,21 @@ def send_crack_sensor_request():
         "batLevel": 80,
         "temperature": -1,
         "humidity": 47,
-        "crackAmount": 0.6,
-        "crackAmount2": 0.0
+        "initCrack": 0.6,
+        "crackAmount": 0.0
     }
     timestamp = "2024-12-24 00:00:00"
     send_inference_request(device_id, sensor_type, sensor_payload, timestamp)
 
 if __name__ == "__main__":
-    # Retrieve current window_months
-    get_window_months()
+    # # Retrieve current window_months
+    # get_window_months()
     
-    # Change window_months to 6
-    change_window_months(6)
+    # # Change window_months to 6
+    # change_window_months(6)
     
-    # Retrieve updated window_months
-    get_window_months()
+    # # Retrieve updated window_months
+    # get_window_months()
     
     # Send inference request for tilt sensor
     send_tilt_sensor_request()

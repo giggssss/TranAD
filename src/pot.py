@@ -150,7 +150,7 @@ def pot_eval(init_score, score, label, q=1e-5, level=0.02):
     import os
     
     pred_df = pd.DataFrame(pred)
-    script_dir = "/workspace/data/github/TranAD"
+    script_dir = "/workspace"
     output_filename = f'{args.model}_{args.dataset}_pred.csv'
     output_path = os.path.join(script_dir, output_filename)
     pred_df.to_csv(output_path, index=False, encoding='utf-8-sig')
