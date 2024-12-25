@@ -1,33 +1,153 @@
 import requests
 import json
+import base64
 
-# API 서버 URL
-url = "http://localhost:5000/v1/inference/sensor-check"
+server_ip = "127.0.0.1"
+server_port = 8080
 
-# 요청 데이터 예시
-data = {
-    "data": {
-        "timestamp": "2024-01-01 00:00:00",
-        "sensor_data": {
-            "sensor_1": 23.5,
-            "sensor_2": 24.0,
-            "sensor_3": 22.8,
-            "sensor_4": 23.1,
-            "sensor_5": 10.3,
-            "sensor_6": 23.9,
-            "sensor_7": 24.1,
-            "sensor_8": 22.7,
-            "sensor_9": 23.4,
-            "sensor_10": 24.2
+def send_inference_request(device_id, sensor_type, sensor_payload, timestamp):
+    """
+    Sends an inference request to the server based on sensor data.
+    
+    Args:
+        device_id (str): Unique ID of the sensor.
+        sensor_type (str): Type of the sensor.
+        sensor_payload (dict): Sensor data payload.
+        timestamp (str): Timestamp string ('YYYY-MM-DD HH:MM:SS').
+        
+    Example:
+        device_id = "sensor_01"
+        sensor_type = "Tilt Sensor"
+        sensor_payload = {
+            "cnt": 2,
+            "rssi": -55,
+            "seqno": "172",
+            "idx": 0,
+            "intervalTimeSet": 60,
+            "batLevel": 80,
+            "temperature": -1,
+            "humidity": 47,
+            "value1": -0.6,
+            "value2": -2.69,
+            "degreeXAmount": 0.6,
+            "degreeYAmount": 2.69
         }
+        timestamp = "2024-12-24 00:00:00"
+    """
+    url = f"http://{server_ip}:{server_port}/v1/inference/sensor-check"
+    data = {
+        "deviceId": device_id,
+        "sensor_type": sensor_type,
+        "payload": sensor_payload,
+        "@timestamp": timestamp
     }
-}
+    response = requests.post(url, json=data)
+    if response.status_code == 200:
+        try:
+            # Decode the response content as UTF-8
+            decoded_content = response.content.decode('utf-8')
+            response_json = json.loads(decoded_content)
+            
+            # Assume certain fields in the response are Base64 encoded
+            if 'encoded_data' in response_json:
+                encoded_data = response_json['encoded_data']
+                # Decode Base64
+                decoded_data = base64.b64decode(encoded_data).decode('utf-8')
+                response_json['decoded_data'] = decoded_data
+                del response_json['encoded_data']
+            
+            # Print the final response
+            print("Server Response:", json.dumps(response_json, ensure_ascii=False, indent=4))
+        except (json.JSONDecodeError, UnicodeDecodeError, base64.binascii.Error) as e:
+            print("Response Decoding Error:", str(e))
+    else:
+        print("Error Occurred:", response.status_code, response.text)
 
-# POST 요청 보내기
-response = requests.post(url, json=data)
+def get_window_months():
+    """
+    Retrieves the current window_months value from the server.
+    """
+    url = f"http://{server_ip}:{server_port}/v1/config/window_months"
+    response = requests.get(url)
+    if response.status_code == 200:
+        print("Current window_months:", json.dumps(response.json(), ensure_ascii=False, indent=4))
+    else:
+        print("Error Occurred:", response.status_code, response.text)
 
-# 응답 처리
-if response.status_code == 200:
-    print("서버 응답:", json.dumps(response.json(), ensure_ascii=False, indent=4))
-else:
-    print("오류 발생:", response.status_code, response.text) 
+def change_window_months(new_window_months):
+    """
+    Changes the window_months value on the server.
+    
+    Args:
+        new_window_months (int): New window_months value to set.
+        
+    Example:
+        new_window_months = 6
+    """
+    url = f"http://{server_ip}:{server_port}/v1/config/window_months"
+    data = {"window_months": new_window_months}
+    response = requests.post(url, json=data)
+    if response.status_code == 200:
+        print("window_months Updated:", json.dumps(response.json(), ensure_ascii=False, indent=4))
+    else:
+        print("Error Occurred:", response.status_code, response.text)
+
+def send_tilt_sensor_request():
+    """
+    Sends example tilt sensor data to the server.
+    """
+    device_id = "sensor_03"
+    sensor_type = "Tilt Sensor"
+    sensor_payload = {
+        "cnt": 2,
+        "rssi": -55,
+        "seqno": "172",
+        "idx": 0,
+        "intervalTimeSet": 60,
+        "batLevel": 80,
+        "temperature": -1,
+        "humidity": 47,
+        "value1": -0.6,
+        "value2": -2.69,
+        "degreeXAmount": 0.6,
+        "degreeYAmount": 2.69
+    }
+    timestamp = "2024-12-24 00:00:00"
+    send_inference_request(device_id, sensor_type, sensor_payload, timestamp)
+
+def send_crack_sensor_request():
+    """
+    Sends example crack sensor data to the server.
+    """
+    device_id = "sensor_02"
+    sensor_type = "Crack Sensor"
+    sensor_payload = {
+        "cnt": 2,
+        "rssi": -55,
+        "seqno": "172",
+        "idx": 0,
+        "intervalTimeSet": 60,
+        "batLevel": 80,
+        "temperature": -1,
+        "humidity": 47,
+        "crackAmount": 0.6,
+        "crackAmount2": 0.0
+    }
+    timestamp = "2024-12-24 00:00:00"
+    send_inference_request(device_id, sensor_type, sensor_payload, timestamp)
+
+if __name__ == "__main__":
+    # Retrieve current window_months
+    get_window_months()
+    
+    # Change window_months to 6
+    change_window_months(6)
+    
+    # Retrieve updated window_months
+    get_window_months()
+    
+    # Send inference request for tilt sensor
+    send_tilt_sensor_request()
+    
+    # Send inference request for crack sensor
+    send_crack_sensor_request()
