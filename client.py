@@ -1,6 +1,7 @@
 import requests
 import json
 import base64
+import random
 
 server_ip = "127.0.0.1"
 server_port = 8080
@@ -100,17 +101,17 @@ def send_tilt_sensor_request():
     sensor_type = "Tilt Sensor"
     sensor_payload = {
         "cnt": 2,
-        "rssi": -55,
-        "seqno": "172",
-        "idx": 0,
-        "intervalTimeSet": 60,
-        "batLevel": 80,
-        "temperature": -1,
-        "humidity": 47,
-        "initDegreeX": -0.6,
-        "initDegreeY": -2.69,
-        "degreeXAmount": 0.6,
-        "degreeYAmount": 2.69
+        "rssi": random.randint(-100, 0),
+        "seqno": str(random.randint(100, 200)),
+        "idx": random.randint(0, 10),
+        "intervalTimeSet": random.randint(30, 120),
+        "batLevel": random.randint(0, 100),
+        "temperature": random.uniform(-20, 40),
+        "humidity": random.uniform(0, 100),
+        "value1": random.uniform(-5, 5),
+        "value2": random.uniform(-5, 5),
+        "degreeXAmount": random.uniform(0, 10),
+        "degreeYAmount": random.uniform(0, 10)
     }
     timestamp = "2024-12-24 00:00:00"
     send_inference_request(device_id, sensor_type, sensor_payload, timestamp)
@@ -123,15 +124,15 @@ def send_crack_sensor_request():
     sensor_type = "Crack Sensor"
     sensor_payload = {
         "cnt": 2,
-        "rssi": -55,
-        "seqno": "172",
-        "idx": 0,
-        "intervalTimeSet": 60,
-        "batLevel": 80,
-        "temperature": -1,
-        "humidity": 47,
-        "initCrack": 0.6,
-        "crackAmount": 0.0
+        "rssi": random.randint(-100, 0),
+        "seqno": str(random.randint(100, 200)),
+        "idx": random.randint(0, 10),
+        "intervalTimeSet": random.randint(30, 120),
+        "batLevel": random.randint(0, 100),
+        "temperature": random.uniform(-20, 40),
+        "humidity": random.uniform(0, 100),
+        "crackAmount": random.uniform(0, 1),
+        "crackAmount2": random.uniform(0, 1)
     }
     timestamp = "2024-12-24 00:00:00"
     send_inference_request(device_id, sensor_type, sensor_payload, timestamp)
@@ -145,9 +146,9 @@ if __name__ == "__main__":
     
     # # Retrieve updated window_months
     # get_window_months()
-    
-    # Send inference request for tilt sensor
-    send_tilt_sensor_request()
-    
-    # Send inference request for crack sensor
-    send_crack_sensor_request()
+    for i in range(1):
+        # Send inference request for tilt sensor
+        send_tilt_sensor_request()
+        
+        # Send inference request for crack sensor
+        send_crack_sensor_request()
